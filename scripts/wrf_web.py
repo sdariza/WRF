@@ -10,10 +10,19 @@ Creates ONE self-contained HTML file (no internet needed) with:
 
 Usage:
   python wrf_web.py /path/wrfout_d01_YYYY-MM-DD_HH:MM:SS [output.html]
-Then open the HTML in any browser.
+      -> interactive map; open the HTML in any browser
+  python wrf_web.py /path/wrfout_d01_YYYY-MM-DD_HH:MM:SS output.gif
+      -> only an animated GIF of the temperature layer (for social media)
+
+The GIF option needs, once:
+  pip install playwright imageio-ffmpeg
+  python -m playwright install --with-deps chromium
 """
 import json
+import os
+import subprocess
 import sys
+import tempfile
 
 import contourpy
 import numpy as np
@@ -24,6 +33,11 @@ UTC_OFFSET = -5
 TZ_NAME = "COT"
 EDGE_CELLS = 8
 TITLE = "Colombian Caribbean · WRF simulation"
+# Temperature GIF settings
+GIF_WIDTH = 900       # pixels; lower it if the file is too heavy
+GIF_FPS = 12          # frames per second
+GIF_SECONDS = 10      # length of the animation
+GIF_HOLD = 0.8        # seconds frozen on the last frame before looping
 CREDIT = "WRF test run (15 km) · NCEP FNL data · Not a forecast"
 # Cities with a line chart in the side panel (in this order; must also be in CITIES)
 CHART_CITIES = ["Barranquilla", "Cartagena", "Santa Marta", "Valledupar", "Montería", "Medellín"]
@@ -458,6 +472,44 @@ legend(); resize(); refresh(); requestAnimationFrame(loop);
 """
 
 
+def make_temperature_gif(html, out):
+    """Render the map's temperature layer frame by frame in a headless browser."""
+    import imageio_ffmpeg
+    from playwright.sync_api import sync_playwright
+
+    n_anim = GIF_FPS * GIF_SECONDS
+    n_hold = round(GIF_FPS * GIF_HOLD)
+    steps = max(1, round(60 / GIF_FPS))  # particle steps per frame (they are tuned for 60 fps)
+    with tempfile.TemporaryDirectory() as tmp:
+        page = os.path.join(tmp, "map.html")
+        with open(page, "w", encoding="utf-8") as f:
+            f.write(html)
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            ctx = browser.new_context(viewport={"width": 1280, "height": 800})
+            ctx.add_init_script("window.requestAnimationFrame = () => 0;")  # we drive every frame
+            pg = ctx.new_page()
+            pg.goto("file://" + page)
+            pg.wait_for_timeout(500)
+            nt = pg.evaluate("NT")
+            pg.evaluate("() => { document.getElementById('play').style.display = 'none'; }")  # no play button in the GIF
+            pg.evaluate("() => { for (let k = 0; k < 80; k++) stepParticles(); }")  # warm-up trails
+            for k in range(n_anim + n_hold):
+                t = (nt - 1) * min(1.0, k / (n_anim - 1))
+                pg.evaluate(f"() => {{ tf = {t}; refresh(); for (let s = 0; s < {steps}; s++) stepParticles(); }}")
+                pg.screenshot(path=os.path.join(tmp, f"f{k:05d}.png"))
+                print(f"\r  rendering frame {k + 1}/{n_anim + n_hold}", end="", flush=True)
+            browser.close()
+        print()
+        vf = (f"scale={GIF_WIDTH}:-1:flags=lanczos,split[a][b];"
+              "[a]palettegen=max_colors=192:stats_mode=diff[p];"
+              "[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle")
+        subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "error",
+                        "-framerate", str(GIF_FPS), "-i", os.path.join(tmp, "f%05d.png"),
+                        "-vf", vf, "-loop", "0", out], check=True)
+    print(f"Saved: {out} ({os.path.getsize(out) / 1e6:.1f} MB)")
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -465,6 +517,9 @@ def main():
     out = sys.argv[2] if len(sys.argv) > 2 else "wrf_map.html"
     data = build_data(sys.argv[1])
     html = HTML.replace("__DATA__", json.dumps(data, separators=(",", ":"), ensure_ascii=False))
+    if out.lower().endswith(".gif"):
+        make_temperature_gif(html, out)
+        return
     with open(out, "w", encoding="utf-8") as f:
         f.write(html)
     print(f"Saved: {out} ({len(html) / 1e6:.1f} MB, {len(data['times'])} time steps)")
