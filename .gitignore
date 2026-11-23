@@ -3,3 +3,4 @@ wrf_dependencies/
 WRF/
 WPS/
 *.log
+__pycache__/
