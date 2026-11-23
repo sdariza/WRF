@@ -119,12 +119,21 @@ HTML = r"""<!DOCTYPE html>
   #charts .h { display:flex; justify-content:space-between; align-items:baseline; font-size:13px; }
   #charts .v { font-weight:700; font-size:15px; }
   #charts canvas { flex:1; min-height:0; width:100%; display:block; }
+  #charts.strip { top:auto; left:14px; right:14px; bottom:80px; width:auto; flex-direction:row;
+    overflow-x:auto; padding:8px 10px; gap:10px; scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch; }
+  #charts.strip .ct { display:none; }
+  #charts.strip .card { flex:0 0 150px; border-top:none; padding-top:0; scroll-snap-align:start; }
+  #charts.strip .card + .card { border-left:1px solid rgba(255,255,255,.07); padding-left:10px; }
+  #charts.strip .h { font-size:12px; }
+  #charts.strip .v { font-size:14px; }
   #tip { position:fixed; pointer-events:none; padding:8px 10px; font-size:12px; line-height:1.45;
     display:none; white-space:nowrap; }
   #tip b { font-size:14px; }
   @media (max-width:640px) {
     #legend { display:none; }
+    #head h1 { font-size:15px; }
     #head .t { font-size:17px; }
+    #credit { font-size:10px; }
     #head { left:14px; right:14px; transform:none; padding:10px 14px; white-space:normal; }
     #layers { top:84px; left:14px; right:14px; flex-direction:row; align-items:center;
       justify-content:space-between; padding:6px; gap:4px; }
@@ -231,8 +240,16 @@ function resize(){
   dpr = window.devicePixelRatio || 1;
   for (const c of [cf,cp,co]){ c.width = innerWidth*dpr; c.height = innerHeight*dpr; }
   const mobile = innerWidth < 640, wide = innerWidth >= 1000 && charts.length > 0;
-  chartsEl.style.display = wide ? "flex" : "none";
-  const top = mobile ? 140 : 100, bottom = 96;
+  const strip = !wide && charts.length > 0 && innerHeight >= 560;   // phones & tablets
+  const stripH = innerHeight < 720 ? 128 : 165;
+  chartsEl.style.display = (wide || strip) ? "flex" : "none";
+  chartsEl.classList.toggle("strip", strip);
+  chartsEl.style.height = strip ? stripH + "px" : "";
+  timeEl.textContent = fmtTime();   // header must have its final height before measuring
+  const layersEl = document.getElementById("layers");
+  layersEl.style.top = mobile ? (headEl.getBoundingClientRect().bottom + 8) + "px" : "";
+  const top = mobile ? layersEl.getBoundingClientRect().bottom + 12 : 100;
+  const bottom = strip ? 80 + stripH + (mobile ? 40 : 28) : 96;
   const left = wide ? 310 : (mobile ? 8 : 20), right = wide ? 200 : (mobile ? 8 : 20);
   const availW = innerWidth - left - right, availH = innerHeight - top - bottom;
   const s = Math.min(availW/(NX-1), availH/(NY-1));
@@ -240,6 +257,7 @@ function resize(){
   box.x = left + (availW - box.w)/2; box.y = top + (availH - box.h)/2;
   headEl.style.left = mobile ? "" : (box.x + box.w/2) + "px";
   creditEl.style.left = box.x + "px"; creditEl.style.right = "auto"; creditEl.style.width = box.w + "px";
+  creditEl.style.top = (box.y + box.h + 6) + "px"; creditEl.style.bottom = "auto";
   sizeCharts();
   drawField(); drawOverlay(); drawCharts();
   xp.clearRect(0,0,cp.width,cp.height);
@@ -406,7 +424,7 @@ slider.oninput = ()=>{ tf = parseFloat(slider.value); refresh(); };
 playBtn.onclick = ()=>{ playing = !playing; playBtn.textContent = playing ? "❚❚" : "▶";
   if (playing && tf >= NT-1) tf = 0; };
 
-addEventListener("mousemove", e=>{
+addEventListener("pointermove", e=>{
   const [x,y] = toGrid(e.clientX, e.clientY);
   if (x<0||y<0||x>NX-1||y>NY-1){ tip.style.display="none"; return; }
   const i = Math.round(x), j = Math.round(y), k = j*NX+i;
