@@ -146,6 +146,9 @@ HTML = r"""<!DOCTYPE html>
 <script>
 const D = __DATA__;
 const NX = D.nx, NY = D.ny, NT = D.times.length;
+const DURATION_S = 10;          // seconds to play the whole simulation
+const PARTICLE_SPEED = 0.007;   // lower = slower wind particles
+const PARTICLE_LIFE = 160;      // frames before a particle respawns
 
 // ---------- palettes: [value, color]
 const PAL = {
@@ -282,8 +285,8 @@ function stepParticles(){
   xp.beginPath();
   for (const p of parts){
     const [u,v] = sampleUV(p.x,p.y);
-    const nx = p.x + u*0.007, ny = p.y + v*0.007;
-    if (++p.age > 160 || nx<0 || ny<0 || nx>NX-1 || ny>NY-1){ spawn(p); p.age = 0; continue; }
+    const nx = p.x + u*PARTICLE_SPEED, ny = p.y + v*PARTICLE_SPEED;
+    if (++p.age > PARTICLE_LIFE || nx<0 || ny<0 || nx>NX-1 || ny>NY-1){ spawn(p); p.age = 0; continue; }
     const [a,b] = toScreen(p.x,p.y), [c,d] = toScreen(nx,ny);
     xp.moveTo(a,b); xp.lineTo(c,d);
     p.x = nx; p.y = ny;
@@ -342,7 +345,7 @@ let last = performance.now();
 function loop(now){
   const dt = Math.min(0.1,(now-last)/1000); last = now;
   if (playing){
-    tf += dt * 0.6;              // model outputs per second
+    tf += dt * (NT-1) / DURATION_S;
     if (tf >= NT-1){ tf = NT-1; playing = false; playBtn.textContent = "▶"; }
     refresh();
   }

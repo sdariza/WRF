@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from graficar_wrfout import (CMAP, POINT, TZ_NAME, draw_map, draw_series,  # noqa: E402
                              load, nearest)
 
-FPS = 1.5
+ANIMATION_SECONDS = 10   # length of the GIF, whatever the number of outputs
 CREDIT = "WRF test run (15 km), NCEP FNL data. Not a forecast."
 
 
@@ -56,7 +56,7 @@ def main():
         return m, title, vline, dot
 
     anim = FuncAnimation(fig, frame, frames=len(t2), blit=False)
-    anim.save(out, writer=PillowWriter(fps=FPS), dpi=100)
+    anim.save(out, writer=PillowWriter(fps=len(t2) / ANIMATION_SECONDS), dpi=100)
     plt.close(fig)
     print(f"Animation saved: {out} ({len(t2)} frames)")
 

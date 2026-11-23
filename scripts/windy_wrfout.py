@@ -26,6 +26,7 @@ from matplotlib.colors import LinearSegmentedColormap
 UTC_OFFSET = -5
 TZ_NAME = "COT"
 EDGE_CELLS = 8
+ANIMATION_SECONDS = 10   # length of the GIF, whatever the number of outputs
 CITIES = [
     ("Barranquilla", 10.96, -74.80), ("Cartagena", 10.39, -75.51),
     ("Santa Marta", 11.24, -74.20), ("Valledupar", 10.46, -73.25),
@@ -151,7 +152,7 @@ def main():
 
     anim = FuncAnimation(fig, frame, frames=len(local), blit=False)
     path = os.path.join(out, "windy_animation.gif")
-    anim.save(path, writer=PillowWriter(fps=1.5), dpi=100, savefig_kwargs={"facecolor": BG})
+    anim.save(path, writer=PillowWriter(fps=len(local) / ANIMATION_SECONDS), dpi=100, savefig_kwargs={"facecolor": BG})
     plt.close(fig)
     print(f"  saved: {path} ({len(local)} frames)")
 
