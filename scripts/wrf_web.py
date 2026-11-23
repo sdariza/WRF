@@ -25,6 +25,8 @@ TZ_NAME = "COT"
 EDGE_CELLS = 8
 TITLE = "Colombian Caribbean · WRF simulation"
 CREDIT = "WRF test run (15 km) · NCEP FNL data · Not a forecast"
+# Cities with a line chart in the side panel (in this order; must also be in CITIES)
+CHART_CITIES = ["Barranquilla", "Cartagena", "Santa Marta", "Valledupar", "Montería", "Medellín"]
 CITIES = [
     ("Barranquilla", 10.96, -74.80), ("Cartagena", 10.39, -75.51),
     ("Santa Marta", 11.24, -74.20), ("Valledupar", 10.46, -73.25),
@@ -72,7 +74,7 @@ def build_data(path):
         t2=[r1(f) for f in t2], u=[r1(f) for f in u], v=[r1(f) for f in v],
         rain=[r1(f) for f in rain],
         lat=np.round(lat, 3).ravel().tolist(), lon=np.round(lon, 3).ravel().tolist(),
-        coast=coast, cities=cities,
+        coast=coast, cities=cities, chart_cities=CHART_CITIES,
     )
 
 
@@ -88,10 +90,10 @@ HTML = r"""<!DOCTYPE html>
   html,body { margin:0; height:100%; background:var(--bg); color:var(--fg);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; overflow:hidden; }
   #stage { position:fixed; inset:0; }
-  canvas { position:absolute; inset:0; width:100%; height:100%; }
+  #stage canvas { position:absolute; inset:0; width:100%; height:100%; }
   .panel { position:fixed; background:var(--panel); backdrop-filter:blur(8px); border-radius:12px;
     box-shadow:0 4px 18px rgba(0,0,0,.35); }
-  #head { top:14px; left:14px; padding:12px 16px; }
+  #head { top:14px; left:50%; transform:translateX(-50%); padding:12px 20px; text-align:center; white-space:nowrap; }
   #head h1 { margin:0; font-size:17px; font-weight:700; }
   #head .t { margin-top:4px; font-size:22px; font-weight:700; color:var(--acc); }
   #layers { top:14px; right:14px; padding:8px; display:flex; flex-direction:column; gap:6px; }
@@ -107,15 +109,23 @@ HTML = r"""<!DOCTYPE html>
   #legend { display:flex; flex-direction:column; gap:3px; min-width:200px; flex:none; }
   #legend .g { height:10px; border-radius:5px; }
   #legend .l { display:flex; justify-content:space-between; font-size:11px; color:var(--muted); }
-  #credit { position:fixed; left:16px; bottom:72px; font-size:11px; color:var(--muted);
-    text-shadow:0 1px 2px #000; }
+  #credit { position:fixed; left:16px; right:16px; bottom:72px; font-size:11px; color:var(--muted);
+    text-align:center; text-shadow:0 1px 2px #000; }
+  #charts { top:100px; left:14px; bottom:96px; width:280px; padding:12px 14px; display:none;
+    flex-direction:column; gap:6px; }
+  #charts .ct { font-size:12px; color:var(--muted); letter-spacing:.02em; }
+  #charts .card { flex:1; min-height:0; display:flex; flex-direction:column; gap:2px;
+    border-top:1px solid rgba(255,255,255,.07); padding-top:6px; }
+  #charts .h { display:flex; justify-content:space-between; align-items:baseline; font-size:13px; }
+  #charts .v { font-weight:700; font-size:15px; }
+  #charts canvas { flex:1; min-height:0; width:100%; display:block; }
   #tip { position:fixed; pointer-events:none; padding:8px 10px; font-size:12px; line-height:1.45;
     display:none; white-space:nowrap; }
   #tip b { font-size:14px; }
   @media (max-width:640px) {
     #legend { display:none; }
     #head .t { font-size:17px; }
-    #head { right:14px; padding:10px 14px; }
+    #head { left:14px; right:14px; transform:none; padding:10px 14px; white-space:normal; }
     #layers { top:84px; left:14px; right:14px; flex-direction:row; align-items:center;
       justify-content:space-between; padding:6px; gap:4px; }
     #layers button { padding:6px 10px; font-size:13px; }
@@ -136,6 +146,7 @@ HTML = r"""<!DOCTYPE html>
   <button data-layer="rain">Rain</button>
   <label><input type="checkbox" id="ptoggle" checked> Wind particles</label>
 </div>
+<div id="charts" class="panel"><div class="ct" id="ctitle"></div></div>
 <div id="credit"></div>
 <div id="bar" class="panel">
   <button id="play" aria-label="Play">▶</button>
@@ -219,13 +230,18 @@ let box = {x:0,y:0,w:1,h:1}, dpr = 1;
 function resize(){
   dpr = window.devicePixelRatio || 1;
   for (const c of [cf,cp,co]){ c.width = innerWidth*dpr; c.height = innerHeight*dpr; }
-  const mobile = innerWidth < 640;
-  const top = mobile ? 140 : 100, bottom = 96, side = mobile ? 8 : 20;
-  const availW = innerWidth - 2*side, availH = innerHeight - top - bottom;
+  const mobile = innerWidth < 640, wide = innerWidth >= 1000 && charts.length > 0;
+  chartsEl.style.display = wide ? "flex" : "none";
+  const top = mobile ? 140 : 100, bottom = 96;
+  const left = wide ? 310 : (mobile ? 8 : 20), right = wide ? 200 : (mobile ? 8 : 20);
+  const availW = innerWidth - left - right, availH = innerHeight - top - bottom;
   const s = Math.min(availW/(NX-1), availH/(NY-1));
   box = { w:s*(NX-1), h:s*(NY-1) };
-  box.x = (innerWidth - box.w)/2; box.y = top + (availH - box.h)/2;
-  drawField(); drawOverlay();
+  box.x = left + (availW - box.w)/2; box.y = top + (availH - box.h)/2;
+  headEl.style.left = mobile ? "" : (box.x + box.w/2) + "px";
+  creditEl.style.left = box.x + "px"; creditEl.style.right = "auto"; creditEl.style.width = box.w + "px";
+  sizeCharts();
+  drawField(); drawOverlay(); drawCharts();
   xp.clearRect(0,0,cp.width,cp.height);
 }
 const toScreen = (x,y)=>[box.x + x/(NX-1)*box.w, box.y + (1 - y/(NY-1))*box.h];
@@ -267,6 +283,70 @@ function drawOverlay(){
     xo.fillStyle = "#fff"; xo.beginPath(); xo.arc(sx,sy,3,0,7); xo.fill();
     xo.lineWidth = 3; xo.strokeStyle = "rgba(0,0,0,.7)"; xo.strokeText(name,sx+6,sy-5);
     xo.fillText(name,sx+6,sy-5);
+  }
+}
+
+// ---------- city line charts
+const chartsEl = document.getElementById("charts"), headEl = document.getElementById("head"),
+      creditEl = document.getElementById("credit");
+const LINE = { temp:"#f0883a", wind:"#38b7c8", rain:"#4f9dff" };
+const LNAME = { temp:"Temperature", wind:"Wind speed", rain:"Accumulated rain" };
+const charts = (D.chart_cities || []).map(n => D.cities.find(c => c[0] === n)).filter(Boolean)
+  .map(([name,i,j]) => {
+    const card = document.createElement("div"); card.className = "card";
+    card.innerHTML = `<div class="h"><span>${name}</span><span class="v"></span></div><canvas></canvas>`;
+    chartsEl.appendChild(card);
+    return { idx:j*NX+i, cv:card.querySelector("canvas"), val:card.querySelector(".v") };
+  });
+const seriesCache = {};
+function series(name, idx){
+  const key = name + ":" + idx;
+  if (!seriesCache[key]){
+    const s = [];
+    for (let t=0;t<NT;t++) s.push(Math.max(name === "temp" ? -99 : 0, cellValue(name,t,t,0,idx)));
+    seriesCache[key] = s;
+  }
+  return seriesCache[key];
+}
+function fmtVal(v){
+  return layer === "temp" ? v.toFixed(1) + " °C" : layer === "wind" ? v.toFixed(0) + " km/h" : v.toFixed(1) + " mm";
+}
+function sizeCharts(){
+  for (const c of charts){
+    const r = c.cv.getBoundingClientRect();
+    c.cv.width = Math.max(1, r.width*dpr); c.cv.height = Math.max(1, r.height*dpr);
+  }
+}
+function drawCharts(){
+  if (chartsEl.style.display === "none") return;
+  document.getElementById("ctitle").textContent = LNAME[layer] + " · cities";
+  const [t0,t1,a] = timeParts();
+  for (const c of charts){
+    const s = series(layer, c.idx), ctx = c.cv.getContext("2d");
+    const W = c.cv.width/dpr, H = c.cv.height/dpr;
+    ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,W,H);
+    let lo = Math.min(...s), hi = Math.max(...s);
+    if (layer === "rain"){ lo = 0; hi = Math.max(hi, 1); }
+    if (hi - lo < 1){ const m = (hi+lo)/2; lo = m - 0.5; hi = m + 0.5; }
+    const px = 26, py = 5;
+    const X = k => px + k/(NT-1)*(W-px-4), Y = v => H - py - (v-lo)/(hi-lo)*(H-2*py);
+    ctx.fillStyle = "rgba(255,255,255,0.045)";
+    for (let k=0;k<NT-1;k++){
+      const h = new Date(D.times[k]).getUTCHours();
+      if (h >= 18 || h < 6) ctx.fillRect(X(k), 0, X(k+1)-X(k), H);
+    }
+    ctx.fillStyle = "#9aa0aa"; ctx.font = "10px -apple-system,Segoe UI,Roboto,Arial,sans-serif";
+    ctx.textBaseline = "top"; ctx.fillText(hi.toFixed(0), 0, 0);
+    ctx.textBaseline = "bottom"; ctx.fillText(lo.toFixed(0), 0, H);
+    ctx.beginPath(); s.forEach((v,k)=> k ? ctx.lineTo(X(k),Y(v)) : ctx.moveTo(X(k),Y(v)));
+    ctx.strokeStyle = LINE[layer]; ctx.lineWidth = 1.8; ctx.lineJoin = "round"; ctx.stroke();
+    ctx.lineTo(X(NT-1), H); ctx.lineTo(X(0), H); ctx.closePath();
+    ctx.globalAlpha = 0.15; ctx.fillStyle = LINE[layer]; ctx.fill(); ctx.globalAlpha = 1;
+    const v = s[t0] + (s[t1]-s[t0])*a, cx = X(tf);
+    ctx.strokeStyle = "rgba(255,255,255,.4)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(cx,0); ctx.lineTo(cx,H); ctx.stroke();
+    ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(cx, Y(v), 3.2, 0, 7); ctx.fill();
+    c.val.textContent = fmtVal(v); c.val.style.color = LINE[layer];
   }
 }
 
@@ -316,7 +396,7 @@ function legend(){
   document.getElementById("ll").innerHTML =
     ticks.map(([v])=>`<span>${v}</span>`).join("") + `<span>${PAL[layer].unit}</span>`;
 }
-function refresh(){ timeEl.textContent = fmtTime(); slider.value = tf; drawField(); }
+function refresh(){ timeEl.textContent = fmtTime(); slider.value = tf; drawField(); drawCharts(); }
 document.querySelectorAll("#layers button").forEach(b=>b.onclick=()=>{
   document.querySelectorAll("#layers button").forEach(x=>x.classList.remove("on"));
   b.classList.add("on"); layer = b.dataset.layer; legend(); refresh();
