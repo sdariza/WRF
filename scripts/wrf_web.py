@@ -140,6 +140,12 @@ HTML = r"""<!DOCTYPE html>
   #charts.strip .card + .card { border-left:1px solid rgba(255,255,255,.07); padding-left:10px; }
   #charts.strip .h { font-size:12px; }
   #charts.strip .v { font-size:14px; }
+  #vlegend { position:fixed; display:none; width:60px; }
+  #vlegend .vg { position:absolute; left:0; top:0; bottom:0; width:14px; border-radius:7px; }
+  #vlegend .vl span { position:absolute; left:22px; transform:translateY(50%); font-size:12px; color:var(--muted); }
+  #vlegend .vu { position:absolute; left:0; top:-26px; font-size:12px; color:var(--fg); font-weight:600; }
+  body.gif #layers, body.gif #bar { display:none; }
+  body.gif #charts { bottom:40px; }
   #tip { position:fixed; pointer-events:none; padding:8px 10px; font-size:12px; line-height:1.45;
     display:none; white-space:nowrap; }
   #tip b { font-size:14px; }
@@ -176,9 +182,12 @@ HTML = r"""<!DOCTYPE html>
   <input id="slider" type="range" min="0" step="0.01" value="0">
   <div id="legend"><div class="g" id="lg"></div><div class="l" id="ll"></div></div>
 </div>
+<div id="vlegend"><div class="vu" id="vu"></div><div class="vg" id="vg"></div><div class="vl" id="vl"></div></div>
 <div id="tip" class="panel"></div>
 <script>
 const D = __DATA__;
+const GIF = window.GIF_MODE === true;   // set by the GIF renderer
+if (GIF) document.body.classList.add("gif");
 const NX = D.nx, NY = D.ny, NT = D.times.length;
 const DURATION_S = 10;          // seconds to play the whole simulation
 const PARTICLE_SPEED = 0.007;   // lower = slower wind particles
@@ -263,8 +272,8 @@ function resize(){
   const layersEl = document.getElementById("layers");
   layersEl.style.top = mobile ? (headEl.getBoundingClientRect().bottom + 8) + "px" : "";
   const top = mobile ? layersEl.getBoundingClientRect().bottom + 12 : 100;
-  const bottom = strip ? 80 + stripH + (mobile ? 40 : 28) : 96;
-  const left = wide ? 310 : (mobile ? 8 : 20), right = wide ? 200 : (mobile ? 8 : 20);
+  const bottom = GIF ? 40 : strip ? 80 + stripH + (mobile ? 40 : 28) : 96;
+  const left = wide ? 310 : (mobile ? 8 : 20), right = GIF ? 130 : wide ? 200 : (mobile ? 8 : 20);
   const availW = innerWidth - left - right, availH = innerHeight - top - bottom;
   const s = Math.min(availW/(NX-1), availH/(NY-1));
   box = { w:s*(NX-1), h:s*(NY-1) };
@@ -272,6 +281,10 @@ function resize(){
   headEl.style.left = mobile ? "" : (box.x + box.w/2) + "px";
   creditEl.style.left = box.x + "px"; creditEl.style.right = "auto"; creditEl.style.width = box.w + "px";
   creditEl.style.top = (box.y + box.h + 6) + "px"; creditEl.style.bottom = "auto";
+  const vl = document.getElementById("vlegend");
+  vl.style.display = GIF ? "block" : "none";
+  vl.style.left = (box.x + box.w + 24) + "px"; vl.style.top = (box.y + 30) + "px";
+  vl.style.height = (box.h - 30) + "px";
   sizeCharts();
   drawField(); drawOverlay(); drawCharts();
   xp.clearRect(0,0,cp.width,cp.height);
@@ -427,6 +440,11 @@ function legend(){
   const ticks = [s[0], s[Math.floor(s.length/3)], s[Math.floor(2*s.length/3)], s[s.length-1]];
   document.getElementById("ll").innerHTML =
     ticks.map(([v])=>`<span>${v}</span>`).join("") + `<span>${PAL[layer].unit}</span>`;
+  document.getElementById("vg").style.background =
+    "linear-gradient(0deg," + s.map(([v,c])=>`${c} ${((v-lo)/(hi-lo)*100).toFixed(1)}%`).join(",") + ")";
+  document.getElementById("vl").innerHTML =
+    s.map(([v])=>`<span style="bottom:${((v-lo)/(hi-lo)*100).toFixed(1)}%">${v}</span>`).join("");
+  document.getElementById("vu").textContent = PAL[layer].unit;
 }
 function refresh(){ timeEl.textContent = fmtTime(); slider.value = tf; drawField(); drawCharts(); }
 document.querySelectorAll("#layers button").forEach(b=>b.onclick=()=>{
@@ -487,12 +505,11 @@ def make_temperature_gif(html, out):
         with sync_playwright() as p:
             browser = p.chromium.launch()
             ctx = browser.new_context(viewport={"width": 1280, "height": 800})
-            ctx.add_init_script("window.requestAnimationFrame = () => 0;")  # we drive every frame
+            ctx.add_init_script("window.requestAnimationFrame = () => 0; window.GIF_MODE = true;")  # we drive every frame
             pg = ctx.new_page()
             pg.goto("file://" + page)
             pg.wait_for_timeout(500)
             nt = pg.evaluate("NT")
-            pg.evaluate("() => { document.getElementById('play').style.display = 'none'; }")  # no play button in the GIF
             pg.evaluate("() => { for (let k = 0; k < 80; k++) stepParticles(); }")  # warm-up trails
             for k in range(n_anim + n_hold):
                 t = (nt - 1) * min(1.0, k / (n_anim - 1))
