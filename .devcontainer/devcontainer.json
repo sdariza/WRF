@@ -1,0 +1,8 @@
+{
+  "name": "WRF",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "containerEnv": {
+    "WRF_DEPS": "/workspaces/wrf_dependencies"
+  },
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y build-essential gfortran csh m4 file wget && bash scripts/install_deps.sh && echo 'source ${containerWorkspaceFolder}/scripts/env.sh' >> ~/.bashrc"
+}

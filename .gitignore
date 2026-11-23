@@ -1,0 +1,5 @@
+# Librerías compiladas y código de WRF/WPS: no se suben al repo
+wrf_dependencies/
+WRF/
+WPS/
+*.log
