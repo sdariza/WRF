@@ -4,3 +4,4 @@ WRF/
 WPS/
 *.log
 __pycache__/
+site/

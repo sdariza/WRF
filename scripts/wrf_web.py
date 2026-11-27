@@ -32,13 +32,14 @@ import xarray as xr
 UTC_OFFSET = -5
 TZ_NAME = "COT"
 EDGE_CELLS = 8
-TITLE = "Colombian Caribbean · WRF simulation"
+# TITLE and CREDIT can be overridden with the WRF_TITLE / WRF_CREDIT environment variables
+TITLE = os.environ.get("WRF_TITLE", "Colombian Caribbean · WRF simulation")
 # Temperature GIF settings
 GIF_WIDTH = 900       # pixels; lower it if the file is too heavy
 GIF_FPS = 12          # frames per second
 GIF_SECONDS = 10      # length of the animation
 GIF_HOLD = 0.8        # seconds frozen on the last frame before looping
-CREDIT = "WRF test run (15 km) · NCEP FNL data · Not a forecast"
+CREDIT = os.environ.get("WRF_CREDIT", "WRF test run (15 km) · NCEP FNL data · Not a forecast")
 # Cities with a line chart in the side panel (in this order; must also be in CITIES)
 CHART_CITIES = ["Barranquilla", "Cartagena", "Santa Marta", "Valledupar", "Montería", "Medellín"]
 CITIES = [

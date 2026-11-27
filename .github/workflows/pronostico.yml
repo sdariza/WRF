@@ -1,0 +1,136 @@
+name: Pronóstico WRF
+
+on:
+  schedule:
+    # 05:30 UTC = 00:30 hora Colombia. El ciclo GFS 00Z ya está completo a esa hora.
+    - cron: "30 5 * * *"
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Fecha del ciclo GFS (YYYYMMDD). Vacío = hoy en UTC"
+        required: false
+        default: ""
+      cycle:
+        description: "Ciclo GFS"
+        required: false
+        default: "00"
+        type: choice
+        options: ["00", "06", "12", "18"]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pronostico-wrf
+  cancel-in-progress: false
+
+env:
+  WRF_HOME: /home/runner/wrf_build
+  WORK: /home/runner/wrf_run
+  LOG_DIR: /home/runner/wrf_logs
+
+jobs:
+  pronostico:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}pronostico/
+    steps:
+      - name: Descargar el repo
+        uses: actions/checkout@v4
+
+      - name: Instalar paquetes del sistema
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran csh m4 file
+
+      - name: Restaurar WRF compilado (caché)
+        id: build-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /home/runner/wrf_build
+          key: wrf-build-v1
+
+      - name: Compilar librerías, WRF y WPS (solo si no hay caché)
+        if: steps.build-cache.outputs.cache-hit != 'true'
+        run: bash scripts/build_wrf.sh
+
+      - name: Guardar WRF compilado (caché)
+        if: steps.build-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /home/runner/wrf_build
+          key: wrf-build-v1
+
+      - name: Restaurar tablas de Thompson (caché)
+        id: thompson-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /home/runner/wrf_build/WRF/run/*.dat
+          key: thompson-tables-v1
+
+      - name: Correr el pronóstico
+        id: forecast
+        env:
+          DATE: ${{ inputs.date }}
+          CYCLE: ${{ inputs.cycle || '00' }}
+        run: bash scripts/run_forecast.sh
+
+      - name: ¿Se generaron tablas de Thompson?
+        id: thompson-check
+        if: always() && steps.thompson-cache.outputs.cache-hit != 'true'
+        run: |
+          if ls /home/runner/wrf_build/WRF/run/qr_acr_q*.dat >/dev/null 2>&1; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Guardar tablas de Thompson (caché)
+        if: always() && steps.thompson-check.outputs.found == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /home/runner/wrf_build/WRF/run/*.dat
+          key: thompson-tables-v1
+
+      - name: Subir logs (para revisar fallas)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-wrf
+          path: /home/runner/wrf_logs/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar librerías de Python
+        run: pip install xarray netCDF4 contourpy pandas numpy
+
+      - name: Generar el sitio
+        env:
+          WRFOUT: ${{ steps.forecast.outputs.wrfout }}
+          WRF_TITLE: "Caribe colombiano · Pronóstico WRF ${{ steps.forecast.outputs.label }}"
+          WRF_CREDIT: "Corrida experimental WRF 15 km · Datos GFS 0.25° (NOAA/NCEP) · No es un pronóstico oficial; consulte al IDEAM"
+        run: |
+          mkdir -p site
+          if [ -d docs ]; then cp -r docs/. site/; fi
+          mkdir -p site/pronostico
+          python scripts/wrf_web.py "$WRFOUT" site/pronostico/index.html
+          # Si docs/ no trae portada, se crea una que lleva al pronóstico
+          if [ ! -f site/index.html ]; then
+            printf '%s\n' '<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=pronostico/"><title>Pronóstico WRF</title><a href="pronostico/">Ver el pronóstico WRF</a>' > site/index.html
+          fi
+
+      - name: Empaquetar el sitio
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Publicar en GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
