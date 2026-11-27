@@ -124,7 +124,8 @@ cp namelist.wps "$LOG_DIR/"
 check_wps() {
   local name="$1"
   cp "$name.log" "$LOG_DIR/" 2>/dev/null || true
-  if ! grep -q "Successful completion of $name" "$name.log" 2>/dev/null; then
+  # WPS escribe: "*** Successful completion of program geogrid.exe ***"
+  if ! grep -q "Successful completion of program ${name}.exe" "$name.log" 2>/dev/null; then
     echo "ERROR: $name.exe falló"
     tail -n 40 "$name.log" 2>/dev/null || true
     exit 1
