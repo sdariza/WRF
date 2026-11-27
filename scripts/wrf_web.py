@@ -191,6 +191,11 @@ const GIF = window.GIF_MODE === true;   // set by the GIF renderer
 if (GIF) document.body.classList.add("gif");
 const NX = D.nx, NY = D.ny, NT = D.times.length;
 const DURATION_S = 10;          // seconds to play the whole simulation
+const LOOP_HOLD_S = 1.2;        // pause on the last hour before starting over
+// ?autoplay=1 starts playing on load (unless the viewer prefers reduced motion).
+// The animation always loops; pressing pause keeps it paused.
+const AUTOPLAY = new URLSearchParams(location.search).has("autoplay") && !GIF &&
+                 !matchMedia("(prefers-reduced-motion: reduce)").matches;
 const PARTICLE_SPEED = 0.007;   // lower = slower wind particles
 const PARTICLE_LIFE = 160;      // frames before a particle respawns
 
@@ -454,8 +459,18 @@ document.querySelectorAll("#layers button").forEach(b=>b.onclick=()=>{
 });
 document.getElementById("ptoggle").onchange = e=>{ showParticles = e.target.checked; };
 slider.oninput = ()=>{ tf = parseFloat(slider.value); refresh(); };
-playBtn.onclick = ()=>{ playing = !playing; playBtn.textContent = playing ? "❚❚" : "▶";
+function setPlaying(on){ playing = on; playBtn.textContent = on ? "❚❚" : "▶";
+  playBtn.setAttribute("aria-label", on ? "Pause" : "Play"); }
+let userPaused = false;   // the viewer paused on purpose: nothing restarts it but the play button
+playBtn.onclick = ()=>{ userPaused = playing; setPlaying(!playing);
   if (playing && tf >= NT-1) tf = 0; };
+// A page that embeds this map can pause it while it is off screen:
+// iframe.contentWindow.postMessage({wrf: "play" | "pause"}, origin)
+addEventListener("message", e=>{
+  if (e.origin !== location.origin || !e.data || !e.data.wrf) return;
+  if (e.data.wrf === "pause") setPlaying(false);
+  else if (e.data.wrf === "play" && AUTOPLAY && !userPaused) setPlaying(true);
+});
 
 addEventListener("pointermove", e=>{
   const [x,y] = toGrid(e.clientX, e.clientY);
@@ -472,19 +487,27 @@ addEventListener("pointermove", e=>{
 addEventListener("mouseleave", ()=>tip.style.display="none");
 
 // ---------- loop
-let last = performance.now();
+let last = performance.now(), hold = 0;
 function loop(now){
   const dt = Math.min(0.1,(now-last)/1000); last = now;
   if (playing){
-    tf += dt * (NT-1) / DURATION_S;
-    if (tf >= NT-1){ tf = NT-1; playing = false; playBtn.textContent = "▶"; }
-    refresh();
+    if (tf >= NT-1){
+      // stay on the last hour for a moment, then start over
+      hold += dt;
+      if (hold >= LOOP_HOLD_S){ hold = 0; tf = 0; refresh(); }
+    } else {
+      tf = Math.min(NT-1, tf + dt * (NT-1) / DURATION_S);
+      refresh();
+    }
   }
   stepParticles();
   requestAnimationFrame(loop);
 }
 addEventListener("resize", resize);
-legend(); resize(); refresh(); requestAnimationFrame(loop);
+legend(); resize(); refresh();
+// Opened on its own: play right away. Embedded in a page: wait for that page to say it is on screen.
+if (AUTOPLAY && window.parent === window) setPlaying(true);
+requestAnimationFrame(loop);
 </script>
 </body>
 </html>
