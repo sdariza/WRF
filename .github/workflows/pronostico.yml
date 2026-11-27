@@ -33,7 +33,9 @@ env:
 
 jobs:
   pronostico:
-    runs-on: ubuntu-latest
+    # Fijo en 24.04 (gcc 13): con ubuntu-latest llegó gcc 15, que usa C23 por defecto
+    # y no compila netCDF 4.7.2 / mpich 3.0.4. Es la misma versión del devcontainer.
+    runs-on: ubuntu-24.04
     timeout-minutes: 350
     environment:
       name: github-pages
